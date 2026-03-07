@@ -5,6 +5,8 @@
 
 const sqlite3 = require('sqlite3').verbose();
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 class PolicyEngine {
   constructor(dbPath = './data/policies.db') {
@@ -15,6 +17,13 @@ class PolicyEngine {
 
   async init() {
     return new Promise((resolve, reject) => {
+      try {
+        const dir = path.dirname(this.dbPath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      } catch (e) {
+        // ignore directory creation errors
+      }
+
       this.db = new sqlite3.Database(this.dbPath, (err) => {
         if (err) {
           console.error('Error opening database:', err);

@@ -1,4 +1,3 @@
-const fetch = require('node-fetch');
 const SovereignShield = require('../index');
 
 jest.setTimeout(30000);

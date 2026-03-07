@@ -8,6 +8,8 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const path = require('path');
+const client = require('prom-client');
+client.collectDefaultMetrics({ prefix: 'ss_' });
 
 // Import core components
 const PolicyEngine = require('./core/policyEngine');
@@ -107,9 +109,19 @@ class SovereignShield {
     this.app.use(express.json({ limit: '10mb' }));
     this.app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-    // Request logging
+    // Request logging and Prometheus metrics
     this.app.use((req, res, next) => {
       console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+      if (!this._reqCounter) {
+        try {
+          this._reqCounter = new client.Counter({ name: 'ss_requests_total', help: 'Total inbound requests', labelNames: ['method','path','status'] });
+        } catch (e) { /* ignore metric creation errors */ }
+      }
+      res.on('finish', () => {
+        try {
+          if (this._reqCounter) this._reqCounter.inc({ method: req.method, path: req.path, status: res.statusCode });
+        } catch (e) {}
+      });
       next();
     });
   }
@@ -268,6 +280,16 @@ class SovereignShield {
       });
     });
 
+    // Metrics endpoint for Prometheus
+    this.app.get('/metrics', async (req, res) => {
+      try {
+        res.set('Content-Type', client.register.contentType);
+        res.send(await client.register.metrics());
+      } catch (err) {
+        res.status(500).send('Error collecting metrics');
+      }
+    });
+
     // 404 handler
     this.app.use('*', (req, res) => {
       res.status(404).json({ error: 'Endpoint not found' });
@@ -320,10 +342,17 @@ class SovereignShield {
       }
 
       console.log('✅ Sovereign Shield shutdown complete');
-      process.exit(0);
+      // During tests we should not terminate the whole process
+      if (!(process.env.JEST_WORKER_ID || process.env.NODE_ENV === 'test')) {
+        process.exit(0);
+      }
     } catch (error) {
       console.error('❌ Error during shutdown:', error);
-      process.exit(1);
+      if (!(process.env.JEST_WORKER_ID || process.env.NODE_ENV === 'test')) {
+        process.exit(1);
+      }
+      // rethrow so tests can observe the error
+      throw error;
     }
   }
 
