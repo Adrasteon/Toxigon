@@ -47,6 +47,17 @@ class DesktopApp {
       this.createWindow();
       this.createTray();
       this.setupIPC();
+
+      // Setup autostart to ensure background service runs after login (Windows/macOS/Linux)
+      try {
+        const AutoStart = require('../utils/autostart');
+        this.autostart = new AutoStart('SovereignShield');
+        // Do not enable automatically; leave control to the user via settings UI
+        // this.autostart.enable();
+        console.log('AutoStart helper initialized');
+      } catch (e) {
+        console.warn('AutoStart helper not available:', e.message);
+      }
       
       app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) this.createWindow();
