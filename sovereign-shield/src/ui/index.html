@@ -9,13 +9,20 @@
   </head>
   <body>
     <h1>Sovereign Shield (Electron)</h1>
+    <nav style="margin-bottom:12px">
+      <button id="nav-home">Home</button>
+      <button id="nav-policy">Policy</button>
+      <button id="nav-logs">Logs</button>
+    </nav>
     <div>
       <button id="btn-start-bg">Start Background Service</button>
       <button id="btn-stop-bg">Stop Background Service</button>
       <button id="btn-enable-autostart">Enable Auto-start</button>
       <button id="btn-disable-autostart">Disable Auto-start</button>
     </div>
-    <pre id="status">Initializing...</pre>
+    <div id="content">
+      <pre id="status">Initializing...</pre>
+    </div>
     <script>
       async function refreshStatus() {
         const statusEl = document.getElementById('status');
@@ -49,6 +56,22 @@
           const res = await window.sovereignAPI.disableAutostart();
           alert(JSON.stringify(res));
         });
+
+        document.getElementById('nav-policy').addEventListener('click', () => {
+          fetch('policy.html').then(r => r.text()).then(html => { document.getElementById('content').innerHTML = html; });
+        });
+
+        document.getElementById('nav-logs').addEventListener('click', async () => {
+          document.getElementById('content').innerHTML = '<h3>Logs</h3><pre id="logs">Loading...</pre>';
+          try {
+            const st = await window.sovereignAPI.getSystemStatus();
+            document.getElementById('logs').innerText = JSON.stringify(st, null, 2);
+          } catch (e) {
+            document.getElementById('logs').innerText = 'Error: ' + e.message;
+          }
+        });
+
+        document.getElementById('nav-home').addEventListener('click', () => { refreshStatus(); document.getElementById('content').innerHTML = document.getElementById('status').outerHTML; });
 
         await refreshStatus();
       });
