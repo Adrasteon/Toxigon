@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sovereign-shield
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sovereign-shield
+  template:
+    metadata:
+      labels:
+        app: sovereign-shield
+    spec:
+      containers:
+        - name: api
+          image: sovereign-shield:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NODE_ENV
+              value: "production"

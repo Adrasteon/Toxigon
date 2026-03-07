@@ -1,0 +1,15 @@
+version: '3.8'
+services:
+  api:
+    build: ./sovereign-shield
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - ./sovereign-shield:/app
+  db:
+    image: sqlite3
+    command: tail -f /dev/null
+    volumes:
+      - ./sovereign-shield/data:/data
