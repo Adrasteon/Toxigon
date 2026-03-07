@@ -6,44 +6,95 @@
 const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
+
+// Simple in-memory model cache keyed by model path + mtime + size
+const modelCache = new Map();
 
 class AIInferenceEngine {
   constructor(modelPath = './models/content_classifier.onnx') {
-    this.modelPath = modelPath;
+    this.modelPath = path.resolve(modelPath);
     this.session = null;
     this.isLoaded = false;
     this.modelMetadata = null;
+    this.cacheKey = null;
   }
 
   /**
-   * Initialize the ONNX runtime session
+   * Initialize the ONNX runtime session with caching
    */
   async init() {
     try {
       // Import ONNX Runtime dynamically to handle optional dependency
       const onnxruntime = require('onnxruntime-node');
-      
+
       // Check if model file exists
+      let stat;
       try {
-        await fs.access(this.modelPath);
+        stat = await fs.stat(this.modelPath);
+        // Cache key based on path + mtime + size to auto-refresh when file changes
+        this.cacheKey = `${this.modelPath}:${stat.mtimeMs}:${stat.size}`;
       } catch (err) {
-        console.warn(`Model file not found at ${this.modelPath}, using mock inference`);
-        this.isLoaded = false;
-        return;
+        console.warn(`Model file not found at ${this.modelPath}, will attempt fallback models`);
       }
 
-      // Load the model
-      this.session = await onnxruntime.InferenceSession.create(this.modelPath);
-      this.isLoaded = true;
-      this.modelMetadata = {
-        inputNames: this.session.inputNames,
-        outputNames: this.session.outputNames,
-        modelPath: this.modelPath
+      const tryLoad = async (modelPathToTry) => {
+        try {
+          const modelStat = await fs.stat(modelPathToTry);
+          const key = `${path.resolve(modelPathToTry)}:${modelStat.mtimeMs}:${modelStat.size}`;
+
+          if (modelCache.has(key)) {
+            const cached = modelCache.get(key);
+            this.session = cached.session;
+            this.modelMetadata = cached.metadata;
+            this.isLoaded = true;
+            this.cacheKey = key;
+            console.log(`AI Inference Engine loaded model from cache: ${modelPathToTry}`);
+            return true;
+          }
+
+          this.session = await onnxruntime.InferenceSession.create(modelPathToTry);
+          this.isLoaded = true;
+          this.modelMetadata = {
+            inputNames: this.session.inputNames,
+            outputNames: this.session.outputNames,
+            modelPath: path.resolve(modelPathToTry)
+          };
+
+          modelCache.set(key, { session: this.session, metadata: this.modelMetadata });
+          this.cacheKey = key;
+          console.log(`AI Inference Engine initialized model: ${modelPathToTry}`);
+          return true;
+        } catch (err) {
+          console.warn(`Failed to load model at ${modelPathToTry}: ${err.message}`);
+          return false;
+        }
       };
-      
-      console.log('AI Inference Engine initialized successfully');
+
+      // If primary model stat was found, try it first
+      if (stat) {
+        const primaryLoaded = await tryLoad(this.modelPath);
+        if (primaryLoaded) return;
+      }
+
+      // Attempt fallback models in order
+      const fallbackCandidates = [
+        path.join('models', 'content_classifier_quant.onnx'),
+        path.join('models', 'content_classifier_small.onnx')
+      ];
+
+      for (const candidate of fallbackCandidates) {
+        const loaded = await tryLoad(candidate);
+        if (loaded) {
+          this.fallbackModelUsed = candidate;
+          return;
+        }
+      }
+
+      console.warn('No ONNX model could be loaded; using mock inference');
+      this.isLoaded = false;
     } catch (error) {
-      console.error('Failed to initialize AI Inference Engine:', error);
+      console.error('Failed to initialize AI Inference Engine (ONNX runtime unavailable or fatal error):', error);
       this.isLoaded = false;
     }
   }
