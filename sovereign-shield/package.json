@@ -8,13 +8,15 @@
     "start:prod": "node src/index.js",
     "start:dev": "npm run ensure-models && nodemon src/index.js",
     "dev": "npm run start:dev",
+    "electron": "electron .",
+    "electron:dev": "npm run ensure-models && electron .",
     "build": "webpack --mode production",
     "build:dev": "webpack --mode development",
     "test": "jest",
     "lint": "eslint src/",
     "format": "prettier --write src/",
     "ensure-models": "node -e \"const fs=require('fs'); if(!fs.existsSync('./models')) fs.mkdirSync('./models'); console.log('models directory ensured');\"",
-    "check-models": "node -e \"const fs=require('fs'); if(!fs.existsSync('./models/content_classifier.onnx')){ console.error('Model missing at ./models/content_classifier.onnx'); process.exit(1);} console.log('Model present at ./models/content_classifier.onnx');\""
+    "check-models": "node -e \"const fs=require('fs'); if(!fs.existsSync('./models/content_classifier.onnx')){ console.error('Model missing at ./models/content_classifier.onnx'); process.exit(1);} console.log('Model present at ./models/content_classifier.onnx');\""}
   },
   "keywords": [
     "content-moderation",
