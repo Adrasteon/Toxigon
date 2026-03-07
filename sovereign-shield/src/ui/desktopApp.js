@@ -119,11 +119,13 @@ class DesktopApp {
           {
             label: 'Protected',
             type: 'radio',
+            id: 'status-protected',
             checked: true
           },
           {
             label: 'Paused',
             type: 'radio',
+            id: 'status-paused',
             checked: false
           }
         ]
@@ -145,6 +147,16 @@ class DesktopApp {
         this.mainWindow.isVisible() ? this.mainWindow.hide() : this.mainWindow.show();
       }
     });
+
+    // Periodically update tray status based on proxy status
+    this.trayStatusInterval = setInterval(async () => {
+      try {
+        const status = this.components?.proxyManager?.getProxyStatus ? this.components.proxyManager.getProxyStatus() : { isActive: this.isProxyActive };
+        await this.updateTrayStatus(status.isActive ? 'protected' : 'paused');
+      } catch (e) {
+        // ignore
+      }
+    }, 5000);
   }
 
   setupIPC() {
@@ -348,8 +360,21 @@ class DesktopApp {
         ? path.join(__dirname, '../assets/tray-icon-protected.png')
         : path.join(__dirname, '../assets/tray-icon-paused.png');
       
-      this.tray.setImage(iconPath);
+      try { this.tray.setImage(iconPath); } catch (e) { /* some platforms may not support setImage */ }
       this.tray.setToolTip(`Sovereign Shield - ${status.toUpperCase()}`);
+
+      // Update context menu status radios
+      try {
+        const menu = this.tray.getContextMenu();
+        if (menu) {
+          const items = menu.items;
+          if (status === 'protected') {
+            items.forEach(it => { if (it.id === 'status-protected') it.checked = true; if (it.id === 'status-paused') it.checked = false; });
+          } else {
+            items.forEach(it => { if (it.id === 'status-protected') it.checked = false; if (it.id === 'status-paused') it.checked = true; });
+          }
+        }
+      } catch (e) { /* ignore */ }
     }
   }
 
