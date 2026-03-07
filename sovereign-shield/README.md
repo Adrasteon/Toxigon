@@ -231,6 +231,15 @@ npm run test:performance
 
 ## 📱 Desktop Application
 
+### Running the Electron app locally
+
+1. Ensure dependencies installed: `npm install`
+2. Start the server API (if desired): `npm run dev` or `npm start`
+3. Launch the Electron app (separate process): `npm run electron:dev`
+
+Note: the Electron app will spawn a detached background service that manages the system proxy. Use the tray menu or app settings to control auto-start and the background service.
+
+
 ### Windows/macOS/Linux Support
 - **Electron-based**: Cross-platform desktop application
 - **System Tray**: Always-accessible control panel
