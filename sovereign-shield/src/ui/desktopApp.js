@@ -33,6 +33,17 @@ class DesktopApp {
     
     // Create application
     app.whenReady().then(() => {
+      // Spawn background service as detached process for continuous protection
+      try {
+        const { spawn } = require('child_process');
+        const bgPath = require('path').join(__dirname, 'backgroundService.js');
+        const child = spawn(process.execPath, [bgPath], { detached: true, stdio: 'ignore' });
+        child.unref();
+        console.log('Background service spawned (detached)');
+      } catch (err) {
+        console.warn('Failed to spawn background service:', err.message || err);
+      }
+
       this.createWindow();
       this.createTray();
       this.setupIPC();
