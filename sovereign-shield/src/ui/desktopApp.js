@@ -7,6 +7,7 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const PolicyEngine = require('../core/policyEngine');
 const ContentFilter = require('../filtering/contentFilter');
 const ThreatExchangeClient = require('../cloud/threatExchange');
@@ -200,6 +201,54 @@ class DesktopApp {
 
     ipcMain.handle('export-logs', async (event, options) => {
       return await this.exportLogs(options);
+    });
+
+    // Autostart controls
+    ipcMain.handle('autostart-enable', async () => {
+      try {
+        if (!this.autostart) {
+          const AutoStart = require('../utils/autostart');
+          this.autostart = new AutoStart('SovereignShield');
+        }
+        this.autostart.enable();
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    });
+
+    ipcMain.handle('autostart-disable', async () => {
+      try {
+        if (this.autostart) this.autostart.disable();
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    });
+
+    // Background service controls
+    ipcMain.handle('background-start', async () => {
+      try {
+        const { spawn } = require('child_process');
+        const bgPath = path.join(__dirname, 'backgroundService.js');
+        const child = spawn(process.execPath, [bgPath], { detached: true, stdio: 'ignore' });
+        child.unref();
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    });
+
+    ipcMain.handle('background-stop', async () => {
+      try {
+        const pidFile = path.join(process.cwd(), 'data', 'background.pid');
+        const pid = fsSync.readFileSync(pidFile, 'utf8');
+        process.kill(Number(pid));
+        try { fsSync.unlinkSync(pidFile); } catch (e) {}
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
     });
   }
 

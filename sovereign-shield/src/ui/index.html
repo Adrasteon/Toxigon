@@ -5,13 +5,19 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sovereign Shield</title>
-    <style>body{font-family:Arial,Helvetica,sans-serif;margin:20px}</style>
+    <style>body{font-family:Arial,Helvetica,sans-serif;margin:20px} button{margin:6px}</style>
   </head>
   <body>
     <h1>Sovereign Shield (Electron)</h1>
-    <div id="status">Initializing...</div>
+    <div>
+      <button id="btn-start-bg">Start Background Service</button>
+      <button id="btn-stop-bg">Stop Background Service</button>
+      <button id="btn-enable-autostart">Enable Auto-start</button>
+      <button id="btn-disable-autostart">Disable Auto-start</button>
+    </div>
+    <pre id="status">Initializing...</pre>
     <script>
-      window.addEventListener('DOMContentLoaded', async () => {
+      async function refreshStatus() {
         const statusEl = document.getElementById('status');
         try {
           const st = await window.sovereignAPI.getSystemStatus();
@@ -19,6 +25,32 @@
         } catch (err) {
           statusEl.innerText = 'Error fetching system status: ' + err.message;
         }
+      }
+
+      window.addEventListener('DOMContentLoaded', async () => {
+        document.getElementById('btn-start-bg').addEventListener('click', async () => {
+          const res = await window.sovereignAPI.startBackgroundService();
+          alert(JSON.stringify(res));
+          await refreshStatus();
+        });
+
+        document.getElementById('btn-stop-bg').addEventListener('click', async () => {
+          const res = await window.sovereignAPI.stopBackgroundService();
+          alert(JSON.stringify(res));
+          await refreshStatus();
+        });
+
+        document.getElementById('btn-enable-autostart').addEventListener('click', async () => {
+          const res = await window.sovereignAPI.enableAutostart();
+          alert(JSON.stringify(res));
+        });
+
+        document.getElementById('btn-disable-autostart').addEventListener('click', async () => {
+          const res = await window.sovereignAPI.disableAutostart();
+          alert(JSON.stringify(res));
+        });
+
+        await refreshStatus();
       });
     </script>
   </body>
