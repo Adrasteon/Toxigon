@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sovereign Shield - Policy</title>
+    <style>body{font-family:Arial;margin:16px} label{display:block;margin-top:8px}</style>
+  </head>
+  <body>
+    <h2>User Policy</h2>
+    <div>
+      <label>User ID: <input id="userId" value="default"/></label>
+      <label>Sensitivity Level: <input id="sensitivity" type="number" min="1" max="10" value="5"/></label>
+      <label>Custom Keywords (comma separated): <input id="keywords"/></label>
+      <label>Blocked Categories (comma separated): <input id="blocked"/></label>
+      <div style="margin-top:12px">
+        <button id="load">Load Policy</button>
+        <button id="save">Save Policy</button>
+      </div>
+    </div>
+    <pre id="output" style="margin-top:12px"></pre>
+
+    <script>
+      async function loadPolicy(){
+        const uid = document.getElementById('userId').value;
+        const out = document.getElementById('output');
+        try{
+          const p = await window.sovereignAPI.getPolicy(uid);
+          if(p){
+            document.getElementById('sensitivity').value = p.sensitivityLevel || 5;
+            document.getElementById('keywords').value = (p.customKeywords || []).join(',');
+            document.getElementById('blocked').value = (p.blockedCategories || []).join(',');
+            out.innerText = 'Policy loaded.';
+          } else {
+            out.innerText = 'No policy found for user.';
+          }
+        }catch(e){ out.innerText = 'Error: ' + e.message }
+      }
+
+      async function savePolicy(){
+        const uid = document.getElementById('userId').value;
+        const policy = {
+          sensitivityLevel: Number(document.getElementById('sensitivity').value),
+          customKeywords: document.getElementById('keywords').value.split(',').map(s=>s.trim()).filter(Boolean),
+          blockedCategories: document.getElementById('blocked').value.split(',').map(s=>s.trim()).filter(Boolean)
+        };
+        const out = document.getElementById('output');
+        try{
+          const res = await window.sovereignAPI.setPolicy(uid, policy);
+          out.innerText = 'Policy saved: ' + JSON.stringify(res);
+        }catch(e){ out.innerText = 'Error: ' + e.message }
+      }
+
+      document.getElementById('load').addEventListener('click', loadPolicy);
+      document.getElementById('save').addEventListener('click', savePolicy);
+    </script>
+  </body>
+</html>
