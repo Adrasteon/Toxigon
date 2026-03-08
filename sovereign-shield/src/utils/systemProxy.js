@@ -282,32 +282,20 @@ class SystemProxyManager {
   async startLocalProxyServer() {
     const http = require('http');
     const https = require('https');
-    const net = require('net');
-    const { URL } = require('url');
-
-    // Connection pooling agents
-    this.httpAgent = new http.Agent({ keepAlive: true, maxSockets: 100 });
-    this.httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 100 });
 
     if (this.localProxyServer) {
       console.log('Local proxy server already running');
       return true;
     }
 
-    // Try to load a ContentFilter instance for interception if available
-    try {
-      const ContentFilter = require('../filtering/contentFilter');
-      this.contentFilter = new ContentFilter();
-      if (this.contentFilter && this.contentFilter.init) await this.contentFilter.init();
-      console.log('Local ContentFilter instance initialized for proxy interception');
-    } catch (err) {
-      // Not fatal - proxy will operate without content filtering
-      this.contentFilter = null;
-      console.warn('ContentFilter not available to proxy:', err.message);
-    }
+    this.localProxyServer = http.createServer((clientReq, clientRes) => {
+      // Basic HTTP proxy handling (does not implement full CONNECT tunneling)
+      if (clientReq.method === 'CONNECT') {
+        clientRes.writeHead(501);
+        clientRes.end('CONNECT method not implemented in lightweight proxy');
+        return;
+      }
 
-    this.localProxyServer = http.createServer(async (clientReq, clientRes) => {
-      // Basic HTTP proxy handling
       try {
         const parsed = new URL(clientReq.url);
         const isSecure = parsed.protocol === 'https:';
@@ -319,77 +307,26 @@ class SystemProxyManager {
           port: parsed.port || (isSecure ? 443 : 80),
           path: parsed.pathname + parsed.search,
           method: clientReq.method,
-          headers: clientReq.headers,
-          agent: isSecure ? this.httpsAgent : this.httpAgent,
-          timeout: 30000
+          headers: clientReq.headers
         };
 
         const proxyReq = targetModule.request(options, (proxyRes) => {
-          // Intercept response if content-type indicates text/json/html and a contentFilter is present
-          const contentType = (proxyRes.headers['content-type'] || '').toLowerCase();
-          if (this.contentFilter && (contentType.includes('text') || contentType.includes('json') || contentType.includes('html'))) {
-            const chunks = [];
-            proxyRes.on('data', (chunk) => chunks.push(chunk));
-            proxyRes.on('end', async () => {
-              const buffer = Buffer.concat(chunks);
-              let body = buffer.toString('utf8');
-
-              try {
-                const result = await this.contentFilter.filterContent('system', body, 'text', { proxied: true });
-                const out = result.isFiltered ? result.filteredContent : body;
-                // Adjust headers
-                const headers = { ...proxyRes.headers };
-                headers['content-length'] = Buffer.byteLength(out);
-                clientRes.writeHead(proxyRes.statusCode, headers);
-                clientRes.end(out);
-              } catch (filterErr) {
-                console.warn('ContentFilter error during proxying:', filterErr.message);
-                clientRes.writeHead(proxyRes.statusCode, proxyRes.headers);
-                clientRes.end(buffer);
-              }
-            });
-
-            proxyRes.on('error', (err) => {
-              console.error('Proxy response error:', err.message);
-              clientRes.writeHead(502);
-              clientRes.end('Bad Gateway');
-            });
-
-          } else {
-            // Pass-through
-            clientRes.writeHead(proxyRes.statusCode, proxyRes.headers);
-            proxyRes.pipe(clientRes);
-          }
+          clientRes.writeHead(proxyRes.statusCode, proxyRes.headers);
+          proxyRes.pipe(clientRes);
         });
 
         proxyReq.on('error', (err) => {
           console.error('Proxy request error:', err.message);
-          try { clientRes.writeHead(502); clientRes.end('Bad Gateway'); } catch(e) {}
+          clientRes.writeHead(502);
+          clientRes.end('Bad Gateway');
         });
 
         clientReq.pipe(proxyReq);
       } catch (err) {
         console.error('Proxy handling error:', err);
-        try { clientRes.writeHead(500); clientRes.end('Proxy error'); } catch(e) {}
+        clientRes.writeHead(500);
+        clientRes.end('Proxy error');
       }
-    });
-
-    // Handle CONNECT tunneling for HTTPS (TCP pass-through)
-    this.localProxyServer.on('connect', (req, clientSocket, head) => {
-      // req.url is like "hostname:port"
-      const [host, port] = req.url.split(':');
-      const serverSocket = net.connect(port || 443, host, () => {
-        clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-        // Pipe initial head and then bi-directional
-        if (head && head.length) serverSocket.write(head);
-        serverSocket.pipe(clientSocket);
-        clientSocket.pipe(serverSocket);
-      });
-
-      serverSocket.on('error', (err) => {
-        console.error('CONNECT tunnel error:', err.message);
-        try { clientSocket.end(); } catch (e) {}
-      });
     });
 
     this.localProxyServer.on('clientError', (err, socket) => {
@@ -415,24 +352,10 @@ class SystemProxyManager {
       await new Promise((resolve) => this.localProxyServer.close(() => resolve()));
       this.localProxyServer = null;
       console.log('Local proxy server stopped');
+      return true;
     }
 
-    // Destroy agents to close sockets
-    try {
-      if (this.httpAgent && this.httpAgent.destroy) this.httpAgent.destroy();
-      if (this.httpsAgent && this.httpsAgent.destroy) this.httpsAgent.destroy();
-    } catch (e) {
-      // ignore
-    }
-
-    // Cleanup content filter
-    try {
-      if (this.contentFilter && this.contentFilter.close) await this.contentFilter.close();
-    } catch (e) {
-      // ignore
-    }
-
-    console.log('Proxy cleanup complete');
+    console.log('No local proxy server to stop');
     return true;
   }
 
