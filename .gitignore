@@ -19,3 +19,9 @@ sovereign-shield/dist/
 # OS temporary files
 Thumbs.db
 .DS_Store
+
+# Local runtime and test artifacts
+.vscode/settings.json
+sovereign-shield/node_modules/
+sovereign-shield/.http-mitm-proxy/
+sovereign-shield/data/
