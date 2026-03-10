@@ -109,6 +109,13 @@ Notes:
 - Models are intentionally excluded from git (see `.gitignore`). Add them to your local `.git/info/exclude` or another artifact store if you need to persist a specific build.
 - Quantization attempts may be experimental and are not included by default — see `scripts/quantize_attempt.py`.
 
+Runtime choice — Node vs Python
+--------------------------------
+
+- Recommendation: for runtime in this Electron/Node application prefer the Node bindings (`onnxruntime-node`). This keeps production installs smaller (no Python venv or heavy ML toolchain), integrates directly with the server/UI, and uses the same ONNX Runtime core for comparable inference speed.
+
+- Use Python (`onnxruntime`) for offline tooling: model conversion, calibration, and quantization (see `scripts/convert_hf_to_onnx.py` and `scripts/quantize_attempt.py`). Keep Python tooling in developer environments and avoid bundling Python into production builds.
+
 ## 🔧 Configuration
 
 ### Environment Variables
