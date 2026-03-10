@@ -11,6 +11,9 @@
     "electron": "electron .",
     "electron:dev": "npm run ensure-models && electron .",
     "build": "webpack --mode production",
+    "rebuild-native": "electron-rebuild -f -w onnxruntime-node,sqlite3,sharp",
+    "dist:win": "npm run rebuild-native && electron-builder --win --x64",
+    "dist:win-unpacked": "npm run rebuild-native && electron-builder --win --x64 --unpacked",
     "build:dev": "webpack --mode development",
     "test": "jest",
     "lint": "eslint src/",
@@ -55,6 +58,7 @@
   "devDependencies": {
     "electron": "^26.0.0",
     "electron-builder": "^24.6.0",
+    "electron-rebuild": "^3.3.5",
     "eslint": "^8.54.0",
     "jest": "^29.7.0",
     "https-proxy-agent": "^7.0.0",

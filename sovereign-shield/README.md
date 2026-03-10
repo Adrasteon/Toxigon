@@ -109,6 +109,34 @@ Notes:
 - Models are intentionally excluded from git (see `.gitignore`). Add them to your local `.git/info/exclude` or another artifact store if you need to persist a specific build.
 - Quantization attempts may be experimental and are not included by default — see `scripts/quantize_attempt.py`.
 
+Windows Packaging (dev)
+-----------------------
+
+You can build Windows installers locally. Basic steps:
+
+- Ensure native modules are rebuilt for Electron (required for `onnxruntime-node`, `sqlite3`, `sharp`):
+
+  ```powershell
+  npm ci
+  npm run rebuild-native
+  ```
+
+- Produce an unpacked Windows build (useful for smoke tests):
+
+  ```powershell
+  npm run dist:win-unpacked
+  ```
+
+- The unpacked app will be in `dist_electron/*-win-unpacked`. To run a quick smoke test that starts the application and checks the health endpoint, run:
+
+  ```powershell
+  .\scripts\run_windows_smoke.ps1
+  ```
+
+Notes:
+- The `dist:win` script creates an NSIS installer; `dist:win-unpacked` creates an unpacked folder that you can run without installing.
+- Signing and installer customization should be added later (CI secrets required for signing keys).
+
 Runtime choice — Node vs Python
 --------------------------------
 
