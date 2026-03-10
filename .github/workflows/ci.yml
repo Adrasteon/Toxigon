@@ -7,6 +7,42 @@ on:
     branches: [ main ]
 
 jobs:
+  test:
+    name: Test (matrix: PROXY_MITM)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [24.x]
+        proxy: [false, true]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Install dependencies
+        run: npm ci --prefix sovereign-shield
+
+      - name: Install optional dependencies (when proxy enabled)
+        if: matrix.proxy == 'true'
+        run: npm install --prefix sovereign-shield --no-audit --no-fund
+
+      - name: Run tests
+        run: npm test --prefix sovereign-shield --silent
+        env:
+          PROXY_MITM: ${{ matrix.proxy && '1' || '' }}
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
   build-and-test:
     runs-on: ubuntu-latest
 

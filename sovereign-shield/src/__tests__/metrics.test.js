@@ -4,9 +4,20 @@ const request = require('supertest');
 let instance;
 
 beforeEach(async () => {
+  // Use ephemeral port to avoid EADDRINUSE in CI/dev machines
+  process.env.PORT = '0';
   instance = new SovereignShield();
-  // allow initialization to complete
-  await new Promise((res) => setTimeout(res, 50));
+
+  // Wait until the app reports it is initialized or timeout
+  const start = Date.now();
+  while (!instance.isInitialized && Date.now() - start < 5000) {
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((res) => setTimeout(res, 50));
+  }
+
+  if (!instance.isInitialized) {
+    throw new Error('SovereignShield did not initialize in time');
+  }
 });
 
 afterEach(async () => {

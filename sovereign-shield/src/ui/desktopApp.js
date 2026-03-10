@@ -211,6 +211,37 @@ class DesktopApp {
       };
     });
 
+    // CA helpers
+    ipcMain.handle('check-ca', async (event, certPath = 'data/proxy-ca/ca.cert.pem') => {
+      try {
+        const p = path.resolve(process.cwd(), certPath);
+        await fs.access(p);
+        return { exists: true, path: p };
+      } catch (e) {
+        return { exists: false, path: path.resolve(process.cwd(), certPath) };
+      }
+    });
+
+    ipcMain.handle('install-ca', async (event, certPath = 'data/proxy-ca/ca.cert.pem') => {
+      try {
+        const installer = require('../utils/mitmCaInstaller');
+        const res = await installer.installCA(path.resolve(process.cwd(), certPath));
+        return res;
+      } catch (e) {
+        return { error: e.message || String(e) };
+      }
+    });
+
+    ipcMain.handle('uninstall-ca', async (event, nameOrPath = 'Sovereign Shield Dev CA') => {
+      try {
+        const installer = require('../utils/mitmCaInstaller');
+        const res = await installer.uninstallCA(nameOrPath);
+        return res;
+      } catch (e) {
+        return { error: e.message || String(e) };
+      }
+    });
+
     ipcMain.handle('export-logs', async (event, options) => {
       return await this.exportLogs(options);
     });

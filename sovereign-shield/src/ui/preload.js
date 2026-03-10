@@ -8,5 +8,10 @@ contextBridge.exposeInMainWorld('sovereignAPI', {
   enableAutostart: () => ipcRenderer.invoke('autostart-enable'),
   disableAutostart: () => ipcRenderer.invoke('autostart-disable'),
   startBackgroundService: () => ipcRenderer.invoke('background-start'),
-  stopBackgroundService: () => ipcRenderer.invoke('background-stop')
+  stopBackgroundService: () => ipcRenderer.invoke('background-stop'),
+
+  // CA helpers for developer workflow
+  checkCA: (certPath) => ipcRenderer.invoke('check-ca', certPath),
+  installCA: (certPath) => ipcRenderer.invoke('install-ca', certPath),
+  uninstallCA: (nameOrPath) => ipcRenderer.invoke('uninstall-ca', nameOrPath)
 });

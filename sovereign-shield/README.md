@@ -82,6 +82,33 @@ npm start
 - Health Check: `http://localhost:3000/health`
 - API Documentation: `http://localhost:3000/api/docs`
 
+## Models
+
+The repository does not track large ML model files. Models are large ONNX blobs and are intentionally excluded from version control to keep the repository lightweight.
+
+- Default model path used by the engine: `./models/content_classifier.onnx`
+- For development you can create the `models` directory and place models there, or use the helper scripts below to download or build the model locally.
+
+Commands:
+
+```bash
+# ensure the models directory exists
+npm run ensure-models
+
+# download a prebuilt model (set MODEL_URL to a raw file URL)
+MODEL_URL="https://example.com/path/to/model.onnx" npm run download-models
+
+# check that the expected model is present
+npm run check-models
+
+# convert a Hugging Face checkpoint to ONNX (requires Python tooling)
+python scripts/convert_hf_to_onnx.py --model sentence-transformers/all-MiniLM-L6-v2 --output models/content_classifier.onnx
+```
+
+Notes:
+- Models are intentionally excluded from git (see `.gitignore`). Add them to your local `.git/info/exclude` or another artifact store if you need to persist a specific build.
+- Quantization attempts may be experimental and are not included by default — see `scripts/quantize_attempt.py`.
+
 ## 🔧 Configuration
 
 ### Environment Variables

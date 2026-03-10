@@ -250,3 +250,54 @@ Comprehensive testing and quality validation
 - **Right to Access**: Users can access their data
 - **Right to Rectification**: Users can correct their data
 - **Right
+ 
+## MITM CA Tooling (Developer)
+
+To support HTTPS interception during development, the project includes a small CA generation helper and an optional MITM proxy.
+
+- **Files:** src/utils/mitmCaManager.js, src/utils/systemProxyMitm.js
+- **Enable MITM during dev:** set environment variable `PROXY_MITM=1` before starting the app.
+- **CA location:** generated CA and key are written to `data/proxy-ca/` by default (`ca.cert.pem`, `ca.key.pem`).
+- **Notes:** The CA generation uses an optional `selfsigned` package and is intended for developer/test machines only. Do NOT use the generated CA in production.
+
+Quick enable example (Windows PowerShell):
+
+```powershell
+$env:PROXY_MITM = '1'
+npm run start:dev
+```
+
+After enabling, follow platform-specific guidance to install the generated `ca.cert.pem` into your OS/browser trust store if you want to inspect HTTPS traffic locally.
+
+### Platform CA install helpers
+
+The repository provides helpers to install/uninstall the generated developer CA:
+
+- Node API: `src/utils/mitmCaInstaller.js` exposes `installCA(certPath)` and `uninstallCA(certPathOrName)` which run platform-appropriate commands and return a promise.
+- PowerShell helper: `scripts/install_ca.ps1` (Windows) — runs `certutil -addstore Root` and requires admin.
+- Shell helper: `scripts/install_ca.sh` (macOS / Linux) — uses `security` on macOS or `update-ca-certificates` / `update-ca-trust` on Linux.
+
+Usage examples:
+
+Windows (PowerShell, run as Admin):
+
+```powershell
+.\scripts\install_ca.ps1 -CertPath data\proxy-ca\ca.cert.pem
+```
+
+macOS:
+
+```bash
+sudo ./scripts/install_ca.sh data/proxy-ca/ca.cert.pem
+```
+
+Linux (Debian/Ubuntu):
+
+```bash
+sudo ./scripts/install_ca.sh data/proxy-ca/ca.cert.pem
+```
+
+Notes:
+
+- These helpers perform system modifications and require administrator privileges. They are intended for developer machines only. Do not use the generated CA in production.
+- If automatic install fails, export `data/proxy-ca/ca.cert.pem` and follow your OS/browser documentation to import a trusted CA.

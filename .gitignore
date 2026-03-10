@@ -1,3 +1,21 @@
 .aider*
 .env
 sovereign-shield/node_modules/electron/dist/electron.exe
+
+# Python virtual environments
+sovereign-shield/.venv/
+
+# ONNX models and large AI artifacts (do not commit heavy model files)
+sovereign-shield/models/
+*.onnx
+*.onnx.*
+*.pt
+*.pth
+*.bin
+
+# Local build artifacts
+sovereign-shield/dist/
+
+# OS temporary files
+Thumbs.db
+.DS_Store

@@ -12,12 +12,17 @@ const os = require('os');
 const modelCache = new Map();
 
 class AIInferenceEngine {
-  constructor(modelPath = './models/content_classifier.onnx') {
+  constructor(modelPath = './models/content_classifier.onnx', imageModelPath = './models/image_classifier.onnx') {
     this.modelPath = path.resolve(modelPath);
+    this.imageModelPath = path.resolve(imageModelPath);
     this.session = null;
+    this.imageSession = null;
+    this.ort = null; // ONNX runtime handle when available
     this.isLoaded = false;
     this.modelMetadata = null;
+    this.imageModelMetadata = null;
     this.cacheKey = null;
+    this.imageCacheKey = null;
   }
 
   /**
@@ -27,41 +32,72 @@ class AIInferenceEngine {
     try {
       // Import ONNX Runtime dynamically to handle optional dependency
       const onnxruntime = require('onnxruntime-node');
+      this.ort = onnxruntime;
 
-      // Check if model file exists
+      // TEXT model: Check if model file exists
       try {
         const stat = await fs.stat(this.modelPath);
-        // Cache key based on path + mtime + size to auto-refresh when file changes
         this.cacheKey = `${this.modelPath}:${stat.mtimeMs}:${stat.size}`;
       } catch (err) {
-        console.warn(`Model file not found at ${this.modelPath}, using mock inference`);
-        this.isLoaded = false;
-        return;
+        console.warn(`Text model file not found at ${this.modelPath}, text inference will use mock mode`);
       }
 
-      // Load from in-memory cache if available
-      if (modelCache.has(this.cacheKey)) {
+      // IMAGE model: Check if image model exists
+      try {
+        const imgStat = await fs.stat(this.imageModelPath);
+        this.imageCacheKey = `${this.imageModelPath}:${imgStat.mtimeMs}:${imgStat.size}`;
+      } catch (err) {
+        // Not fatal; image inference can still use mock
+        // console.warn(`Image model file not found at ${this.imageModelPath}, image inference will use mock mode`);
+      }
+
+      // Load cached TEXT session if available
+      if (this.cacheKey && modelCache.has(this.cacheKey)) {
         const cached = modelCache.get(this.cacheKey);
         this.session = cached.session;
         this.modelMetadata = cached.metadata;
         this.isLoaded = true;
-        console.log('AI Inference Engine loaded model from cache');
-        return;
+        console.log('AI Inference Engine loaded text model from cache');
+      } else if (this.cacheKey) {
+        try {
+          this.session = await this.ort.InferenceSession.create(this.modelPath);
+          this.isLoaded = true;
+          this.modelMetadata = {
+            inputNames: this.session.inputNames,
+            outputNames: this.session.outputNames,
+            modelPath: this.modelPath
+          };
+          modelCache.set(this.cacheKey, { session: this.session, metadata: this.modelMetadata });
+          console.log('AI Inference Engine initialized text model successfully');
+        } catch (e) {
+          console.warn('Failed to create text session, continuing in mock mode:', e.message);
+          this.session = null;
+          this.isLoaded = false;
+        }
       }
 
-      // Create a new inference session and cache it
-      this.session = await onnxruntime.InferenceSession.create(this.modelPath);
-      this.isLoaded = true;
-      this.modelMetadata = {
-        inputNames: this.session.inputNames,
-        outputNames: this.session.outputNames,
-        modelPath: this.modelPath
-      };
-
-      // Cache session and metadata for reuse
-      modelCache.set(this.cacheKey, { session: this.session, metadata: this.modelMetadata });
-
-      console.log('AI Inference Engine initialized successfully');
+      // Load cached IMAGE session if available
+      if (this.imageCacheKey && modelCache.has(this.imageCacheKey)) {
+        const cachedImg = modelCache.get(this.imageCacheKey);
+        this.imageSession = cachedImg.session;
+        this.imageModelMetadata = cachedImg.metadata;
+        console.log('AI Inference Engine loaded image model from cache');
+      } else if (this.imageCacheKey) {
+        try {
+          this.imageSession = await this.ort.InferenceSession.create(this.imageModelPath);
+          this.imageModelMetadata = {
+            inputNames: this.imageSession.inputNames,
+            outputNames: this.imageSession.outputNames,
+            modelPath: this.imageModelPath
+          };
+          modelCache.set(this.imageCacheKey, { session: this.imageSession, metadata: this.imageModelMetadata });
+          console.log('AI Inference Engine initialized image model successfully');
+        } catch (e) {
+          // Leave imageSession null to allow mock image inference
+          console.warn('Failed to create image session, image inference will use mock mode:', e.message);
+          this.imageSession = null;
+        }
+      }
     } catch (error) {
       console.error('Failed to initialize AI Inference Engine (ONNX not available or error):', error);
       this.isLoaded = false;
@@ -85,15 +121,33 @@ class AIInferenceEngine {
     const tokens = cleanedText.split(' ').slice(0, maxLength);
     
     // Convert to tensor-like format
-    const inputArray = new Float32Array(maxLength).fill(0);
+    // We'll produce integer token ids (hashed) and attention/token_type arrays
+    const hashIds = new BigInt64Array(maxLength);
+    for (let i = 0; i < maxLength; i++) hashIds[i] = 0n;
     tokens.forEach((token, index) => {
-      // Simple hash-based tokenization
-      inputArray[index] = this.hashToken(token) / 1000000;
+      // Simple hash-based tokenization -> deterministic integer ids
+      const h = Math.abs(this.hashToken(token)) % 1000000; // keep values small
+      hashIds[index] = BigInt(h);
     });
 
+    const attention = new BigInt64Array(maxLength);
+    for (let i = 0; i < maxLength; i++) attention[i] = 1n;
+    const tokenTypes = new BigInt64Array(maxLength);
+    for (let i = 0; i < maxLength; i++) tokenTypes[i] = 0n;
+
+    if (!this.ort) {
+      // Return raw arrays if ONNX runtime not available (caller should check isLoaded)
+      return {
+        input_ids: hashIds,
+        attention_mask: attention,
+        token_type_ids: tokenTypes
+      };
+    }
+
     return {
-      input_ids: new onnxruntime.Tensor('float32', inputArray, [1, maxLength]),
-      attention_mask: new onnxruntime.Tensor('float32', new Float32Array(maxLength).fill(1), [1, maxLength])
+      input_ids: new this.ort.Tensor('int64', hashIds, [1, maxLength]),
+      attention_mask: new this.ort.Tensor('int64', attention, [1, maxLength]),
+      token_type_ids: new this.ort.Tensor('int64', tokenTypes, [1, maxLength])
     };
   }
 
@@ -206,8 +260,15 @@ class AIInferenceEngine {
         inputArray[i] = processed[i] / 255.0;
       }
 
+      // Use runtime's Tensor constructor when available
+      if (this.ort) {
+        return {
+          input: new this.ort.Tensor('float32', inputArray, [1, 224, 224, 3])
+        };
+      }
+
       return {
-        input: new onnxruntime.Tensor('float32', inputArray, [1, 224, 224, 3])
+        input: inputArray
       };
     } catch (error) {
       console.error('Image preprocessing error:', error);
@@ -220,23 +281,26 @@ class AIInferenceEngine {
    * @param {Buffer} imageBuffer - Image data
    */
   async classifyImage(imageBuffer) {
-    if (!this.isLoaded) {
+    // Prefer dedicated image session if available
+    const session = this.imageSession || this.session;
+
+    if (!session) {
       return this.mockImageInference(imageBuffer);
     }
 
     try {
       const inputs = await this.preprocessImage(imageBuffer);
-      const outputs = await this.session.run(inputs);
-      
-      const predictions = outputs[this.session.outputNames[0]];
+      const outputs = await session.run(inputs);
+
+      const predictions = outputs[session.outputNames[0]];
       const scores = Array.from(predictions.data);
       const probabilities = this.softmax(scores);
-      
+
       return {
         isFiltered: probabilities[1] > 0.5,
         confidence: Math.max(...probabilities),
         scores: probabilities,
-        modelUsed: this.modelMetadata.modelPath,
+        modelUsed: (this.imageModelMetadata || this.modelMetadata || {}).modelPath,
         processingTime: Date.now()
       };
     } catch (error) {
@@ -269,7 +333,10 @@ class AIInferenceEngine {
   getModelInfo() {
     return {
       isLoaded: this.isLoaded,
-      metadata: this.modelMetadata,
+      metadata: {
+        text: this.modelMetadata,
+        image: this.imageModelMetadata
+      },
       capabilities: ['text_classification', 'image_classification']
     };
   }
@@ -279,9 +346,15 @@ class AIInferenceEngine {
    */
   async close() {
     if (this.session) {
-      await this.session.release();
+      try { await this.session.release(); } catch(e) { /* ignore */ }
       this.session = null;
     }
+
+    if (this.imageSession) {
+      try { await this.imageSession.release(); } catch(e) { /* ignore */ }
+      this.imageSession = null;
+    }
+
     this.isLoaded = false;
   }
 }

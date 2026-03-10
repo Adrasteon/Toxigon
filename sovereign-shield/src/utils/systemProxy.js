@@ -7,6 +7,12 @@ const { execSync, exec } = require('child_process');
 const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
+let SystemProxyMitm = null;
+try {
+  SystemProxyMitm = require('./systemProxyMitm');
+} catch (e) {
+  SystemProxyMitm = null;
+}
 
 class SystemProxyManager {
   constructor() {
@@ -14,6 +20,8 @@ class SystemProxyManager {
     this.proxyPort = 8080;
     this.proxyHost = '127.0.0.1';
     this.isProxyActive = false;
+    this.useMitm = (process.env.PROXY_MITM === '1' || process.env.PROXY_MITM === 'true');
+    this.mitmProxy = null;
   }
 
   /**
@@ -280,6 +288,19 @@ class SystemProxyManager {
    * Start local proxy server for content filtering
    */
   async startLocalProxyServer() {
+    // If MITM requested and available, use it
+    if (this.useMitm && SystemProxyMitm) {
+      if (this.mitmProxy && this.mitmProxy.getStatus().running) {
+        console.log('MITM proxy already running');
+        return true;
+      }
+
+      this.mitmProxy = new SystemProxyMitm({ port: this.proxyPort, silent: false });
+      await this.mitmProxy.start();
+      console.log(`MITM proxy started on port ${this.proxyPort}`);
+      return true;
+    }
+
     const http = require('http');
     const https = require('https');
 
@@ -348,6 +369,18 @@ class SystemProxyManager {
    * Stop local proxy server
    */
   async stopLocalProxyServer() {
+    // Stop MITM if running
+    if (this.mitmProxy) {
+      try {
+        await this.mitmProxy.stop();
+      } catch (e) {
+        // ignore
+      }
+      this.mitmProxy = null;
+      console.log('MITM proxy stopped');
+      return true;
+    }
+
     if (this.localProxyServer) {
       await new Promise((resolve) => this.localProxyServer.close(() => resolve()));
       this.localProxyServer = null;

@@ -24,6 +24,44 @@
       <pre id="status">Initializing...</pre>
     </div>
     <script>
+      // CA prompt UI
+      async function checkAndRenderCA() {
+        try {
+          const ca = await window.sovereignAPI.checkCA('data/proxy-ca/ca.cert.pem');
+          const container = document.createElement('div');
+          container.style.padding = '10px';
+          container.style.border = '1px solid #ddd';
+          container.style.marginTop = '12px';
+
+          if (!ca.exists) {
+            container.innerHTML = `<strong>Developer HTTPS interception not installed</strong><div>To inspect HTTPS traffic locally you can install a developer CA (safe for local dev only).</div>`;
+            const btn = document.createElement('button');
+            btn.textContent = 'Install Dev CA';
+            btn.onclick = async () => {
+              btn.disabled = true;
+              const res = await window.sovereignAPI.installCA('data/proxy-ca/ca.cert.pem');
+              alert(JSON.stringify(res));
+              btn.disabled = false;
+            };
+            container.appendChild(btn);
+          } else {
+            container.innerHTML = `<strong>Developer CA installed</strong><div>Path: ${ca.path}</div>`;
+            const btn = document.createElement('button');
+            btn.textContent = 'Uninstall Dev CA';
+            btn.onclick = async () => {
+              btn.disabled = true;
+              const res = await window.sovereignAPI.uninstallCA(ca.path || 'Sovereign Shield Dev CA');
+              alert(JSON.stringify(res));
+              btn.disabled = false;
+            };
+            container.appendChild(btn);
+          }
+
+          document.body.insertBefore(container, document.getElementById('content'));
+        } catch (e) {
+          console.warn('CA prompt unavailable:', e.message || e);
+        }
+      }
       async function refreshStatus() {
         const statusEl = document.getElementById('status');
         try {
@@ -74,6 +112,8 @@
         document.getElementById('nav-home').addEventListener('click', () => { refreshStatus(); document.getElementById('content').innerHTML = document.getElementById('status').outerHTML; });
 
         await refreshStatus();
+        // Show CA install prompt for developer flow
+        checkAndRenderCA();
       });
     </script>
   </body>

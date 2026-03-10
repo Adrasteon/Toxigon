@@ -9,7 +9,10 @@ const helmet = require('helmet');
 const compression = require('compression');
 const path = require('path');
 const client = require('prom-client');
-client.collectDefaultMetrics({ prefix: 'ss_' });
+// Avoid starting prom-client's global collectors during Jest tests to prevent leaked handles
+if (!(process.env.JEST_WORKER_ID || process.env.NODE_ENV === 'test')) {
+  client.collectDefaultMetrics({ prefix: 'ss_' });
+}
 
 // Import core components
 const PolicyEngine = require('./core/policyEngine');
@@ -314,9 +317,11 @@ class SovereignShield {
       console.log(`❤️ Health Check: http://localhost:${port}/health`);
     });
 
-    // Graceful shutdown
-    process.on('SIGTERM', () => this.shutdown());
-    process.on('SIGINT', () => this.shutdown());
+    // Graceful shutdown handlers (store refs so they can be removed during tests)
+    this._sigtermHandler = () => this.shutdown();
+    this._sigintHandler = () => this.shutdown();
+    process.on('SIGTERM', this._sigtermHandler);
+    process.on('SIGINT', this._sigintHandler);
   }
 
   async shutdown() {
@@ -325,7 +330,8 @@ class SovereignShield {
     try {
       // Stop server
       if (this.server) {
-        this.server.close();
+        await new Promise((res) => this.server.close(() => res()));
+        this.server = null;
       }
 
       // Cleanup components
@@ -342,6 +348,23 @@ class SovereignShield {
       }
 
       console.log('✅ Sovereign Shield shutdown complete');
+      // Clear Prometheus registry to stop background metric collectors
+      try {
+        if (client && client.register && typeof client.register.clear === 'function') {
+          client.register.clear();
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      // Remove process signal handlers registered by this instance
+      try {
+        if (this._sigtermHandler) process.removeListener('SIGTERM', this._sigtermHandler);
+        if (this._sigintHandler) process.removeListener('SIGINT', this._sigintHandler);
+      } catch (e) {
+        // ignore
+      }
+
       // During tests we should not terminate the whole process
       if (!(process.env.JEST_WORKER_ID || process.env.NODE_ENV === 'test')) {
         process.exit(0);
