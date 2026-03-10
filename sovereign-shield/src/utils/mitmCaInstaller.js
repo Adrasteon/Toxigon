@@ -18,12 +18,20 @@ function run(cmd, opts = {}) {
   });
 }
 
-async function installCA(certPath) {
+async function installCA(certPath, opts = {}) {
   if (!certPath) throw new Error('certPath required');
   const abs = path.resolve(certPath);
   if (!fs.existsSync(abs)) throw new Error(`CA file not found: ${abs}`);
 
   const platform = os.platform();
+
+  // Test/sandbox mode: copy to sandbox dir instead of system stores
+  if (opts.sandboxDir) {
+    const dest = path.join(opts.sandboxDir, path.basename(abs));
+    await fs.promises.mkdir(opts.sandboxDir, { recursive: true });
+    await fs.promises.copyFile(abs, dest);
+    return { platform: 'sandbox', installed: true, target: dest };
+  }
 
   if (platform === 'win32') {
     // Windows: use certutil to add to Trusted Root Certification Authorities
@@ -64,6 +72,17 @@ async function installCA(certPath) {
 
 async function uninstallCA(certPathOrName) {
   const platform = os.platform();
+  const opts = arguments[1] || {};
+  // Test/sandbox uninstall
+  if (opts.sandboxDir) {
+    const target = path.join(opts.sandboxDir, path.basename(certPathOrName));
+    try {
+      await fs.promises.unlink(target);
+      return { platform: 'sandbox', removed: true, target };
+    } catch (e) {
+      return { platform: 'sandbox', removed: false, error: e.message };
+    }
+  }
   if (platform === 'win32') {
     // Try by subject name
     const cmd = `certutil -delstore "Root" "${certPathOrName}"`;

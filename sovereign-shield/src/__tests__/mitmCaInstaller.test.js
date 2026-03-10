@@ -1,26 +1,24 @@
-jest.mock('child_process', () => ({
-  exec: (cmd, opts, cb) => {
-    // simulate success
-    if (typeof opts === 'function') cb = opts;
-    cb && cb(null, 'ok', '');
-  }
-}));
-
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const { installCA, uninstallCA } = require('../utils/mitmCaInstaller');
 
-describe('mitmCaInstaller', () => {
+describe('mitmCaInstaller (sandbox mode)', () => {
   test('installCA rejects missing file', async () => {
-    await expect(installCA('nonexistent-file.pem')).rejects.toThrow(/not found/);
+    await expect(installCA('nonexistent-file.pem', { sandboxDir: path.join(os.tmpdir(), 'ss-sandbox') })).rejects.toThrow(/not found/);
   });
 
-  test('installCA succeeds when file exists (mocked cmd)', async () => {
-    const tmp = path.join(__dirname, '..', '..', 'data', 'proxy-ca');
-    await require('fs').promises.mkdir(tmp, { recursive: true });
+  test('installCA succeeds in sandbox and uninstall removes file', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-ca-'));
     const certPath = path.join(tmp, 'test-ca.pem');
-    await require('fs').promises.writeFile(certPath, 'dummy');
+    await fs.promises.writeFile(certPath, 'dummy');
 
-    await expect(installCA(certPath)).resolves.toHaveProperty('installed', true);
-    await expect(uninstallCA(certPath)).resolves.toHaveProperty('removed', true);
+    const sandbox = path.join(tmp, 'sandbox');
+    const res = await installCA(certPath, { sandboxDir: sandbox });
+    expect(res).toHaveProperty('installed', true);
+    expect(res.platform).toBe('sandbox');
+
+    const removed = await uninstallCA(certPath, { sandboxDir: sandbox });
+    expect(removed).toHaveProperty('removed', true);
   });
 });
