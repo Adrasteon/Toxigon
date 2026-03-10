@@ -18,13 +18,18 @@ class ThreatExchangeClient {
       userId: config.userId || process.env.USER_ID,
       updateInterval: config.updateInterval || 300000, // 5 minutes
       maxRetries: config.maxRetries || 3,
-      retryDelay: config.retryDelay || 1000
+      retryDelay: config.retryDelay || 1000,
+      // Circuit breaker settings
+      failureThreshold: config.failureThreshold || 5,
+      circuitResetMs: config.circuitResetMs || 60000
     };
     
     this.isInitialized = false;
     this.lastUpdate = null;
     this.updateTimer = null;
     this.threatCache = new Map();
+    this.failureCount = 0;
+    this.circuitOpenUntil = null;
 
     // Local persistence for offline/fast lookup
     this.dataDir = config.dataDir || path.join(process.cwd(), 'data');
@@ -81,7 +86,7 @@ class ThreatExchangeClient {
       this.authToken = response.data.token;
       this.authExpiry = response.data.expiresAt;
     } catch (error) {
-      throw new Error(`Authentication failed: ${error.message}`);
+      throw new Error(`Authentication failed: ${error && error.message ? error.message : String(error)}`);
     }
   }
 
@@ -117,7 +122,9 @@ class ThreatExchangeClient {
    */
   async fetchThreatUpdates() {
     if (!this.isInitialized) {
-      throw new Error('Threat Exchange client not initialized');
+      // Not initialized - skip cloud fetchs
+      console.warn('Skipping fetchThreatUpdates: client not initialized');
+      return null;
     }
 
     try {
@@ -168,6 +175,12 @@ class ThreatExchangeClient {
    * @param {Object} threatData - Threat information to report
    */
   async reportThreat(threatData) {
+    // Validate incoming threat data
+    try {
+      this.validateThreatData(threatData);
+    } catch (err) {
+      throw new Error(`Invalid threat data: ${err.message}`);
+    }
     const reportData = {
       ...threatData,
       reportedBy: this.config.userId,
@@ -184,7 +197,7 @@ class ThreatExchangeClient {
         try { await this.saveThreatToDb(reportData.hash, { ...reportData, source: 'reported_cloud' }); } catch (e) { /* ignore */ }
         return response.data;
       } catch (error) {
-        console.warn('Cloud report failed, storing locally for later sync:', error.message);
+        console.warn('Cloud report failed, storing locally for later sync:', error && error.message ? error.message : error);
         await this.saveThreatToDb(reportData.hash, { ...reportData, source: 'reported_local', cachedAt: Date.now() });
         return { success: false, message: 'Stored locally due to cloud failure' };
       }
@@ -201,6 +214,7 @@ class ThreatExchangeClient {
    * @param {string} contentType - Type of content
    */
   async getThreatIntelligence(content, contentType = 'text') {
+    if (!content || typeof content !== 'string') throw new Error('content must be a non-empty string');
     const contentHash = crypto.createHash('sha256').update(content).digest('hex');
     
     // Check in-memory cache first
@@ -295,9 +309,15 @@ class ThreatExchangeClient {
    * @param {Object} data - Request data
    */
   async makeRequest(method, endpoint, data = null) {
+    // Circuit breaker: refuse requests while circuit is open
+    if (this.circuitOpenUntil && Date.now() < this.circuitOpenUntil) {
+      throw new Error('Threat Exchange circuit open due to repeated failures');
+    }
+
     let retries = 0;
-    
-    while (retries < this.config.maxRetries) {
+    const maxRetries = Math.max(1, this.config.maxRetries);
+
+    while (retries < maxRetries) {
       try {
         const config = {
           method,
@@ -320,16 +340,41 @@ class ThreatExchangeClient {
         }
 
         const response = await axios(config);
+
+        // Successful request -> reset failure counter
+        this.failureCount = 0;
         return response;
       } catch (error) {
         retries++;
-        
-        if (retries >= this.config.maxRetries) {
-          throw error;
+
+        // If unauthorized, attempt one re-auth and retry
+        if (error && error.response && error.response.status === 401 && retries < maxRetries) {
+          try {
+            await this.authenticate();
+            // small pause to ensure token propagated
+            await this.delay(200);
+            continue;
+          } catch (authErr) {
+            // auth failed - fall through to retry/backoff
+          }
         }
 
-        // Wait before retrying
-        await this.delay(this.config.retryDelay * retries);
+        // Increment failure count and possibly open circuit
+        this.failureCount++;
+        if (this.failureCount >= this.config.failureThreshold) {
+          this.circuitOpenUntil = Date.now() + this.config.circuitResetMs;
+          console.warn('Threat Exchange circuit opened due to repeated failures');
+        }
+
+        if (retries >= maxRetries) {
+          const msg = (error && error.message) ? error.message : String(error);
+          throw new Error(`Request to Threat Exchange failed after ${retries} retries: ${msg}`);
+        }
+
+        // Exponential backoff with full jitter
+        const backoffBase = this.config.retryDelay || 1000;
+        const backoff = Math.floor(Math.random() * (backoffBase * Math.pow(2, retries)));
+        await this.delay(backoff);
       }
     }
   }
@@ -377,6 +422,17 @@ class ThreatExchangeClient {
     } catch (err) {
       console.warn('DB save error:', err.message);
     }
+  }
+
+  /**
+   * Validate threat data shape and required fields
+   */
+  validateThreatData(threatData) {
+    if (!threatData || typeof threatData !== 'object') throw new Error('threatData must be an object');
+    if (!threatData.type || typeof threatData.type !== 'string') throw new Error('threatData.type is required');
+    if (!threatData.content && !threatData.hash) throw new Error('threatData must include content or hash');
+    if (threatData.content && typeof threatData.content !== 'string') throw new Error('threatData.content must be a string');
+    return true;
   }
 
   async getThreatFromDb(hash) {
